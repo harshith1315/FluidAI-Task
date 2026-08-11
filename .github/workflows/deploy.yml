@@ -1,0 +1,49 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # 1. Checkout source code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Login to Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 3. Build and push Docker image
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          file: ./app/Dockerfile
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/fluidai-task:${{ github.sha }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/fluidai-task:latest
+
+      # 4. Deploy to Kubernetes server
+      - name: Deploy to Kubernetes
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            kubectl set image deployment/flask-app \
+              flask-app=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/fluidai-task:${{ github.sha }}
+
+            kubectl rollout status deployment/flask-app --timeout=120s
+
+            kubectl get pods -l app=flask-app
